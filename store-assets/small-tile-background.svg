@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#29223e"/>
+      <stop offset="1" stop-color="#493a74"/>
+    </linearGradient>
+    <linearGradient id="halo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7e9c9"/>
+      <stop offset="1" stop-color="#e5c27f"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="280" fill="url(#bg)"/>
+  <circle cx="355" cy="137" r="111" fill="url(#halo)"/>
+  <circle cx="55" cy="232" r="68" fill="#7867a8" opacity=".15"/>
+  <circle cx="425" cy="25" r="51" fill="#8d7ac1" opacity=".18"/>
+  <text x="32" y="85" fill="#fffaf0" font-family="Arial, sans-serif" font-size="31" font-weight="700">Research</text>
+  <text x="32" y="122" fill="#fffaf0" font-family="Arial, sans-serif" font-size="31" font-weight="700">Helper Pup</text>
+  <rect x="32" y="145" width="178" height="2" rx="1" fill="#d8c9ff" opacity=".7"/>
+  <text x="32" y="177" fill="#eee8ff" font-family="Arial, sans-serif" font-size="15">Review results. Check links.</text>
+  <text x="32" y="201" fill="#eee8ff" font-family="Arial, sans-serif" font-size="15">Save useful passages locally.</text>
+</svg>

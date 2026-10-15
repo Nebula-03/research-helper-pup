@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Research Helper Pup — Local notes file</title>
+    <link rel="stylesheet" href="./notes.css">
+  </head>
+  <body>
+    <main class="page">
+      <h1>Keep a local notes file</h1>
+      <p class="intro">Your notes stay in this Chrome profile. You can also link one text file on this device as a readable copy.</p>
+      <section class="card" aria-labelledby="file-status-heading">
+        <h2 id="file-status-heading">Text file</h2>
+        <p id="file-status" role="status" aria-live="polite">Checking…</p>
+        <div class="actions">
+          <button id="choose-file" type="button">Choose or create a .txt file</button>
+          <button id="reconnect-file" type="button" hidden>Reconnect and update</button>
+          <button id="unlink-file" class="secondary" type="button" hidden>Disconnect file</button>
+        </div>
+      </section>
+      <section class="details">
+        <h2>How it works</h2>
+        <ul>
+          <li>Chrome’s local notebook remains the main copy of your notes.</li>
+          <li>After you choose a file, new notes and deletions are copied into it when Chrome has write access.</li>
+          <li>If Chrome asks for permission again, open this page and choose “Reconnect and update.” The notebook continues saving while the file is disconnected.</li>
+          <li>The extension replaces the text file contents with the current notebook. Hand edits to the file can be overwritten on the next update.</li>
+          <li>Disconnecting the file stops future updates but does not delete the file.</li>
+        </ul>
+      </section>
+    </main>
+    <script src="./index.js"></script>
+  </body>
+</html>

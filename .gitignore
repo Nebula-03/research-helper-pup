@@ -1,0 +1,29 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Source maps
+dist/**/*.map
+
+# Future secrets — never commit these
+.env
+.env.local
+.env*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor configs
+.vscode/settings.json
+.idea/
+
+# npm logs
+npm-debug.log*
+
+PRIVACY.md
+
+# Packaged release archives
+*.zip
