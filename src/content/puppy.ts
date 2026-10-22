@@ -90,10 +90,12 @@ function setLocalSettings(
 
 // ── Pup sound ────────────────────────────────────────────────────────────────
 let pupSound: HTMLAudioElement | null = null;
+let noteSavedSound: HTMLAudioElement | null = null;
+let pettingWoofSound: HTMLAudioElement | null = null;
 
 function getPupSound(): HTMLAudioElement {
   if (!pupSound) {
-    pupSound = new Audio(chrome.runtime.getURL("assets/pup-bark.ogg"));
+    pupSound = new Audio(chrome.runtime.getURL("assets/pup-bark-small.wav"));
     pupSound.preload = "auto";
     pupSound.volume = 0.22;
   }
@@ -110,6 +112,43 @@ async function playBark(): Promise<boolean> {
   } catch {
     // Audio can be unavailable or blocked by the browser; keep saving notes working.
     return false;
+  }
+}
+
+function getNoteSavedSound(): HTMLAudioElement {
+  if (!noteSavedSound) {
+    noteSavedSound = new Audio(chrome.runtime.getURL("assets/note-saved-tick.mp3"));
+    noteSavedSound.preload = "auto";
+    noteSavedSound.volume = 0.45;
+  }
+  return noteSavedSound;
+}
+
+async function playNoteSavedSound(): Promise<void> {
+  if (!soundPreferenceLoaded || pupSoundsMuted) return;
+  try {
+    const sound = getNoteSavedSound();
+    sound.currentTime = 0;
+    await sound.play();
+  } catch {
+    // Audio can be unavailable or blocked; note saving and its visual feedback still work.
+  }
+}
+
+function playPettingWoof(): void {
+  if (!soundPreferenceLoaded || pupSoundsMuted) return;
+  try {
+    if (!pettingWoofSound) {
+      pettingWoofSound = new Audio(chrome.runtime.getURL("assets/petting-pug-woof.mp3"));
+      pettingWoofSound.preload = "auto";
+      pettingWoofSound.volume = 0.35;
+    }
+    pettingWoofSound.currentTime = 0;
+    void pettingWoofSound.play().catch(() => {
+      // Petting animation remains available if audio is blocked.
+    });
+  } catch {
+    // Petting animation remains available if audio is unavailable.
   }
 }
 
@@ -320,7 +359,7 @@ async function playWelcomeBark(): Promise<void> {
 }
 
 function celebrateSavedNote(): void {
-  void playBark();
+  void playNoteSavedSound();
   savedStatus.hidden = false;
   if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
   savedStatusTimeout = setTimeout(() => {
@@ -653,7 +692,10 @@ function initDrag(): void {
 
 // ── Pup greeting ──────────────────────────────────────────────────────────────
 function initPupGreeting(): void {
-  svg.addEventListener("pointerenter", () => svg.classList.add("petting"), { passive: true });
+  svg.addEventListener("pointerenter", () => {
+    svg.classList.add("petting");
+    playPettingWoof();
+  }, { passive: true });
   svg.addEventListener("pointerleave", () => svg.classList.remove("petting"), { passive: true });
 }
 

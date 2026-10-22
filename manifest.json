@@ -38,7 +38,9 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "assets/pup-bark.ogg"
+        "assets/pup-bark-small.wav",
+        "assets/note-saved-tick.mp3",
+        "assets/petting-pug-woof.mp3"
       ],
       "matches": [
         "<all_urls>"
