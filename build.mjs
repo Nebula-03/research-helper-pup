@@ -30,8 +30,8 @@ function copyAssets() {
     cpSync("src/content/puppy.css", "dist/content/puppy.css");
     cpSync("src/notes/index.html", "dist/notes/index.html");
     cpSync("src/notes/notes.css", "dist/notes/notes.css");
+    cpSync("src/assets", "dist/assets", { recursive: true });
     if (existsSync("icons")) cpSync("icons", "dist/icons", { recursive: true });
-    if (existsSync("data")) cpSync("data", "dist/data", { recursive: true });
   } catch (err) {
     console.error("Asset copy failed:", err);
     process.exit(1);

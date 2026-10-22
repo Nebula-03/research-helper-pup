@@ -1,142 +1,115 @@
 import type {
   CaptureSelectionMessage,
-  CheckRequest,
-  CheckResponse,
   DeleteNoteMessage,
   GetNotesMessage,
   NotesResponse,
   ResearchNote,
   StoreNoteMessage,
-  Verdict,
 } from "../shared/messages";
-import { readResearchPage } from "./research";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const HOVER_DELAY_MS = 400;
-const MSG_APPEAR_DELAY_MS = 8000;    // message appears after 8 seconds
-const MSG_SAFE_UPGRADE_MS = 8000;    // follow-up is timed from hover start
-const MSG_HIDE_DELAY_MS = 10000;     // each message stays for 10 seconds
-const IDLE_MESSAGE_DELAY_MS = 10 * 60 * 1000;
-const IDLE_MESSAGES = ["Hellooo", "Where are you?"];
-const SAFE_PROTOCOLS = ["https:", "http:"];
-const MAX_URL_LENGTH = 2048;
-const CHECK_RATE_LIMIT_MS = 200;
-const RESEARCH_RESULT_LIMIT = 12;
-const GREETING_DURATION_MS = 3000;
-const CONSENT_STORAGE_KEY = "researchHelperPageDataConsentVersion";
+const CONSENT_STORAGE_KEY = "researchHelperNotesConsentVersion";
 const SOUND_MUTED_STORAGE_KEY = "researchHelperPupSoundsMuted";
-const CONSENT_VERSION = 1;
+const CONSENT_VERSION = 2;
 const CONSENT_DECLINED = "declined";
 
-// ── URL Validation ───────────────────────────────────────────────────────────
-function isSafeToCheck(url: string): boolean {
-  if (url.length > MAX_URL_LENGTH) return false;
+const EXTENSION_RELOADED_MESSAGE = "Research Helper Pup was reloaded. Refresh this page to reconnect.";
+
+function sendExtensionMessage<T>(message: object, callback: (response: T | undefined, error?: string) => void): void {
   try {
-    const parsed = new URL(url);
-    return SAFE_PROTOCOLS.includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
-
-// ── Sound Engine (Web Audio API — no files needed) ───────────────────────────
-let audioCtx: AudioContext | null = null;
-let barkNoiseBuffer: AudioBuffer | null = null;
-
-function getAudioCtx(): AudioContext {
-  if (!audioCtx) {
-    audioCtx = new AudioContext();
-  }
-  return audioCtx;
-}
-
-function playBark(): void {
-  if (!soundPreferenceLoaded || pupSoundsMuted) return;
-  try {
-    const ctx = getAudioCtx();
-    if (!barkNoiseBuffer) {
-      const bufferLength = Math.floor(ctx.sampleRate * 0.18);
-      barkNoiseBuffer = ctx.createBuffer(1, bufferLength, ctx.sampleRate);
-      const noise = barkNoiseBuffer.getChannelData(0);
-      for (let i = 0; i < noise.length; i++) {
-        noise[i] = (Math.random() * 2 - 1) * (1 - i / noise.length * 0.35);
-      }
+    if (!chrome.runtime?.id) {
+      callback(undefined, EXTENSION_RELOADED_MESSAGE);
+      return;
     }
-
-    // Two short, rough bark pulses: a falling growl with a filtered noise edge.
-    [0, 0.25].forEach((startOffset) => {
-      const startAt = ctx.currentTime + startOffset;
-      const endAt = startAt + 0.17;
-      const bodyOsc = ctx.createOscillator();
-      const overtoneOsc = ctx.createOscillator();
-      const bodyFilter = ctx.createBiquadFilter();
-      const bodyGain = ctx.createGain();
-
-      bodyOsc.type = "sawtooth";
-      bodyOsc.frequency.setValueAtTime(280, startAt);
-      bodyOsc.frequency.exponentialRampToValueAtTime(95, endAt);
-      overtoneOsc.type = "triangle";
-      overtoneOsc.frequency.setValueAtTime(560, startAt);
-      overtoneOsc.frequency.exponentialRampToValueAtTime(190, endAt);
-      bodyFilter.type = "lowpass";
-      bodyFilter.frequency.setValueAtTime(1400, startAt);
-      bodyFilter.Q.setValueAtTime(0.8, startAt);
-      bodyOsc.connect(bodyFilter);
-      overtoneOsc.connect(bodyFilter);
-      bodyFilter.connect(bodyGain);
-      bodyGain.connect(ctx.destination);
-
-      bodyGain.gain.setValueAtTime(0.001, startAt);
-      bodyGain.gain.linearRampToValueAtTime(0.22, startAt + 0.015);
-      bodyGain.gain.exponentialRampToValueAtTime(0.001, endAt);
-
-      const noiseSource = ctx.createBufferSource();
-      const noiseFilter = ctx.createBiquadFilter();
-      const noiseGain = ctx.createGain();
-      noiseSource.buffer = barkNoiseBuffer;
-      noiseFilter.type = "bandpass";
-      noiseFilter.frequency.setValueAtTime(950, startAt);
-      noiseFilter.Q.setValueAtTime(0.7, startAt);
-      noiseSource.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(ctx.destination);
-      noiseGain.gain.setValueAtTime(0.001, startAt);
-      noiseGain.gain.linearRampToValueAtTime(0.1, startAt + 0.012);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, endAt);
-
-      bodyOsc.start(startAt);
-      overtoneOsc.start(startAt);
-      noiseSource.start(startAt);
-      bodyOsc.stop(endAt);
-      overtoneOsc.stop(endAt);
-      noiseSource.stop(endAt);
+    chrome.runtime.sendMessage(message, (response: T | undefined) => {
+      let error: string | undefined;
+      try {
+        error = chrome.runtime.lastError?.message;
+      } catch {
+        error = EXTENSION_RELOADED_MESSAGE;
+      }
+      callback(response, normalizeExtensionError(error));
     });
   } catch {
-    // Audio not available — fail silently
+    callback(undefined, EXTENSION_RELOADED_MESSAGE);
   }
 }
 
-function playWhine(): void {
-  if (!soundPreferenceLoaded || pupSoundsMuted) return;
+function normalizeExtensionError(error?: string): string | undefined {
+  if (!error) return undefined;
+  return /context invalidated|receiving end does not exist|message port closed/i.test(error)
+    ? EXTENSION_RELOADED_MESSAGE
+    : error;
+}
+
+function getLocalSettings(
+  keys: string | string[],
+  callback: (items: Record<string, unknown>, error?: string) => void,
+): void {
   try {
-    const ctx = getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(800, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.5);
+    if (!chrome.runtime?.id) {
+      callback({}, EXTENSION_RELOADED_MESSAGE);
+      return;
+    }
+    chrome.storage.local.get(keys, (items) => {
+      let error: string | undefined;
+      try {
+        error = normalizeExtensionError(chrome.runtime.lastError?.message);
+      } catch {
+        error = EXTENSION_RELOADED_MESSAGE;
+      }
+      callback(items, error);
+    });
   } catch {
-    // Audio not available — fail silently
+    callback({}, EXTENSION_RELOADED_MESSAGE);
+  }
+}
+
+function setLocalSettings(
+  values: Record<string, unknown>,
+  callback: (error?: string) => void,
+): void {
+  try {
+    if (!chrome.runtime?.id) {
+      callback(EXTENSION_RELOADED_MESSAGE);
+      return;
+    }
+    chrome.storage.local.set(values, () => {
+      let error: string | undefined;
+      try {
+        error = normalizeExtensionError(chrome.runtime.lastError?.message);
+      } catch {
+        error = EXTENSION_RELOADED_MESSAGE;
+      }
+      callback(error);
+    });
+  } catch {
+    callback(EXTENSION_RELOADED_MESSAGE);
+  }
+}
+
+// ── Pup sound ────────────────────────────────────────────────────────────────
+let pupSound: HTMLAudioElement | null = null;
+
+function getPupSound(): HTMLAudioElement {
+  if (!pupSound) {
+    pupSound = new Audio(chrome.runtime.getURL("assets/pup-bark.ogg"));
+    pupSound.preload = "auto";
+    pupSound.volume = 0.22;
+  }
+  return pupSound;
+}
+
+async function playBark(): Promise<boolean> {
+  if (!soundPreferenceLoaded || pupSoundsMuted) return false;
+  try {
+    const sound = getPupSound();
+    sound.currentTime = 0;
+    await sound.play();
+    return true;
+  } catch {
+    // Audio can be unavailable or blocked by the browser; keep saving notes working.
+    return false;
   }
 }
 
@@ -233,17 +206,17 @@ const PUPPY_TEMPLATE = `
     </g>
 
   </svg>
-  <div id="sus-pup-msg"></div>
   <button id="sus-pup-options-button" type="button" aria-label="Pup options" title="Pup options">⋯</button>
+  <div id="sus-pup-save-status" role="status" aria-live="polite" hidden>Saved in notes 🐾</div>
   <div id="sus-pup-options-menu" class="sus-pup-popup" role="menu" hidden>
-    <button id="sus-pup-enable-research" type="button" role="menuitem" hidden>Enable research features</button>
+    <button id="sus-pup-enable-notes" type="button" role="menuitem" hidden>Enable note saving</button>
     <button id="sus-pup-see-notes" type="button" role="menuitem">See notes</button>
     <button id="sus-pup-toggle-sound" type="button" role="menuitemcheckbox" aria-checked="false">
       <svg class="sus-pup-sound-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm-7-4a7 7 0 0 0 14 0m-7 7v3m-4 0h8" />
         <path class="sus-pup-sound-muted-mark" d="m4 4 16 16" />
       </svg>
-      <span id="sus-pup-sound-label">Mute pup sounds</span>
+      <span id="sus-pup-sound-label">Mute pup</span>
     </button>
   </div>
   <section id="sus-pup-notebook" class="sus-pup-popup" aria-label="Research notes" hidden>
@@ -254,23 +227,26 @@ const PUPPY_TEMPLATE = `
     <div class="sus-pup-notes-file-tools">
       <button id="sus-pup-link-notes-file" type="button">Connect a local .txt file</button>
     </div>
+    <p id="sus-pup-notes-status" role="status" aria-live="polite" hidden></p>
+    <label id="sus-pup-notes-search-label" for="sus-pup-notes-search" hidden>Find a note</label>
+    <input id="sus-pup-notes-search" type="search" placeholder="Search notes or sources" autocomplete="off" hidden>
     <div id="sus-pup-notes-content" aria-live="polite"></div>
   </section>
   <div id="sus-pup-consent-overlay" role="dialog" aria-modal="true" aria-labelledby="sus-pup-consent-title" hidden>
     <section id="sus-pup-consent-card">
-      <h2 id="sus-pup-consent-title">A quick privacy choice</h2>
-      <p>Research Helper Pup can help with web research by checking the page information below. These features stay off until you choose <strong>Enable these features</strong>.</p>
-      <ul>
-        <li><strong>Search results:</strong> On Google, Bing, and DuckDuckGo results pages, it checks up to 12 result destination URLs for safety. It does not read your search query, result titles, or snippets.</li>
-        <li><strong>Hovered links:</strong> On other pages, it checks a link destination URL after you hover over it.</li>
-        <li><strong>Notes:</strong> Only when you use the Notes shortcut, it captures your selected text, page title, page URL, and save time.</li>
-      </ul>
-      <p>Checks happen on this device. Notes stay in this Chrome profile unless you choose to connect a local .txt file. This extension does not send this information to the developer or another service. It does not read text you type in the Chrome address bar.</p>
+      <h2 id="sus-pup-consent-title">Hi! I’m Research Helper Pup 🐾</h2>
+      <p>Keep useful bits of research in three steps:</p>
+      <ol class="sus-pup-welcome-steps">
+        <li><strong>Select text</strong> on the webpage that you want to keep.</li>
+        <li><strong>Press <kbd>Ctrl+Shift+Y</kbd></strong> (on Mac, <kbd>Command+Shift+Y</kbd>).</li>
+        <li><strong>Find it in See notes.</strong> Your note is saved on this device. Connect a .txt file there if you also want a readable file copy.</li>
+      </ol>
+      <p>Chrome asks for access to websites so the pup can appear automatically. It saves only the text you select, the page title, web address, and time when you press the shortcut. Notes stay in this Chrome profile and are not sent to the developer or another service. The pup does not check links.</p>
       <a id="sus-pup-privacy-link" href="https://github.com/Nebula-03/research-helper-pup-support/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer">Read the privacy policy</a>
       <p id="sus-pup-consent-status" role="status" aria-live="polite"></p>
       <div id="sus-pup-consent-actions">
         <button id="sus-pup-consent-not-now" type="button">Not now</button>
-        <button id="sus-pup-consent-enable" type="button">Enable these features</button>
+        <button id="sus-pup-consent-enable" type="button">Start saving notes</button>
       </div>
     </section>
   </div>
@@ -289,43 +265,22 @@ function createPuppy(): HTMLElement {
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
-let currentVerdict: Verdict = "safe";
-let msgTimeout: ReturnType<typeof setTimeout> | null = null;
-let msgAppearTimeout: ReturnType<typeof setTimeout> | null = null;
-let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
-let safeLingerTimeout: ReturnType<typeof setTimeout> | null = null;
-let idleMessageTimeout: ReturnType<typeof setTimeout> | null = null;
-let idleMessageIndex = 0;
-let isSniffing = false;
-let lastCheckTime = 0;
-let hoveredLink: HTMLAnchorElement | null = null;
-let hoverStartedAt = 0;
-let hoverSequence = 0;
-let isLinkHoverActive = false;
-let researchSequence = 0;
-let lastResearchSignature = "";
-let researchTimer: ReturnType<typeof setTimeout> | null = null;
+let savedNotes: ResearchNote[] = [];
 let notesLoadSequence = 0;
-let greetingTimeout: ReturnType<typeof setTimeout> | null = null;
-let hasPageDataConsent = false;
-let dataFeaturesInitialized = false;
+let hasNoteSavingConsent = false;
+let noteSavingInitialized = false;
 let pupSoundsMuted = false;
 let soundPreferenceLoaded = false;
+let welcomeSoundPending = false;
+let welcomeGreetingShown = false;
+let savedStatusTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 let container: HTMLElement;
 let svg: SVGElement;
-let tail: SVGElement;
-let nose: SVGElement;
-let body: SVGElement;
-let mouth: SVGElement;
-let tongue: SVGElement;
-let blushL: SVGElement;
-let blushR: SVGElement;
-let msgBox: HTMLElement;
 let optionsButton: HTMLButtonElement;
 let optionsMenu: HTMLDivElement;
-let enableResearchButton: HTMLButtonElement;
+let enableNotesButton: HTMLButtonElement;
 let consentOverlay: HTMLDivElement;
 let consentStatus: HTMLElement;
 let consentEnableButton: HTMLButtonElement;
@@ -333,211 +288,52 @@ let consentNotNowButton: HTMLButtonElement;
 let seeNotesButton: HTMLButtonElement;
 let soundToggleButton: HTMLButtonElement;
 let soundToggleLabel: HTMLSpanElement;
+let savedStatus: HTMLElement;
 let linkNotesFileButton: HTMLButtonElement;
 let notebookPanel: HTMLElement;
 let closeNotesButton: HTMLButtonElement;
 let notesContent: HTMLElement;
+let notesStatus: HTMLElement;
+let notesSearchInput: HTMLInputElement;
 
-// ── Animation states ─────────────────────────────────────────────────────────
-function cancelPupGreeting(): void {
-  if (greetingTimeout) clearTimeout(greetingTimeout);
-  greetingTimeout = null;
-  svg.classList.remove("greeting");
-}
-
-function startPupGreeting(): void {
-  if (currentVerdict !== "safe" || isSniffing || greetingTimeout || svg.classList.contains("danger")) return;
-  svg.classList.add("greeting");
-  greetingTimeout = setTimeout(() => {
-    svg.classList.remove("greeting");
-    greetingTimeout = null;
-  }, GREETING_DURATION_MS);
-}
-function setIdle(preserveMessage = false): void {
-  currentVerdict = "safe";
-  isSniffing = false;
-
-  svg.classList.remove("danger");
-  tail.classList.remove("fast");
-  tail.classList.remove("checking");
-  nose.style.animationPlayState = "paused";
-  body.classList.remove("barking");
-
-  mouth.setAttribute("d", "M 42 50 Q 50 58 58 50");
-  tongue.setAttribute("opacity", "0");
-  blushL.setAttribute("opacity", "0");
-  blushR.setAttribute("opacity", "0");
-
-  if (!preserveMessage) hideMsg();
-}
-
-function setSniff(): void {
-  cancelPupGreeting();
-  isSniffing = true;
-  svg.classList.remove("danger");
-  tail.classList.remove("fast");
-  tail.classList.add("checking");
-  nose.style.animationPlayState = "running";
-  body.classList.remove("barking");
-  mouth.setAttribute("d", "M 42 50 Q 50 54 58 50");
-  tongue.setAttribute("opacity", "0");
-
-  // Whine sound while sniffing
-  playWhine();
-  showMsg("Um... let me check.", "checking");
-}
-
-function setSafe(startedAt: number, sequence: number): void {
-  cancelPupGreeting();
-  currentVerdict = "safe";
-  isSniffing = false;
-
-  svg.classList.remove("danger");
-  tail.classList.add("fast");
-  tail.classList.remove("checking");
-  nose.style.animationPlayState = "paused";
-  body.classList.remove("barking");
-
-  mouth.setAttribute("d", "M 40 50 Q 50 62 60 50");
-  tongue.setAttribute("opacity", "1");
-  blushL.setAttribute("opacity", "0.5");
-  blushR.setAttribute("opacity", "0.5");
-
-  if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-  if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-
-  const followUpAt = startedAt + MSG_SAFE_UPGRADE_MS;
-  const followUpDelay = Math.max(0, followUpAt - Date.now());
-  if (isLinkHoverActive && sequence === hoverSequence && followUpDelay === 0) {
-    showMsg("Yeah yeah, open! I checked — no red flags 🐾", "safe");
-    return;
-  }
-
-  showMsg("Open open.. ✅", "safe");
-  if (isLinkHoverActive && sequence === hoverSequence) {
-    safeLingerTimeout = setTimeout(() => {
-      if (isLinkHoverActive && sequence === hoverSequence) {
-        showMsg("open! I checked — no red flags 🐾", "safe");
-      }
-    }, followUpDelay);
+function welcomePup(): void {
+  if (welcomeGreetingShown) return;
+  welcomeGreetingShown = true;
+  if (!soundPreferenceLoaded) {
+    welcomeSoundPending = true;
+  } else if (!pupSoundsMuted) {
+    playWelcomeBark();
   }
 }
 
-function setUnsafe(reason: string): void {
-  cancelPupGreeting();
-  currentVerdict = "unsafe";
-  isSniffing = false;
-
-  svg.classList.add("danger");
-  tail.classList.remove("fast");
-  tail.classList.remove("checking");
-  nose.style.animationPlayState = "paused";
-
-  mouth.setAttribute("d", "M 42 54 Q 50 48 58 54");
-  tongue.setAttribute("opacity", "0");
-  blushL.setAttribute("opacity", "0");
-  blushR.setAttribute("opacity", "0");
-
-  body.classList.remove("barking");
-  void body.getBoundingClientRect().width;
-  body.classList.add("barking");
-
-  // Bark sound immediately on danger
-  playBark();
-
-  if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-  if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-  showMsg(`🚨 Danger: ${reason}`, "unsafe");
+async function playWelcomeBark(): Promise<void> {
+  if (pupSoundsMuted) return;
+  const played = await playBark();
+  if (played || pupSoundsMuted) return;
+  const retryAfterGesture = () => {
+    document.removeEventListener("pointerdown", retryAfterGesture);
+    document.removeEventListener("keydown", retryAfterGesture);
+    if (!pupSoundsMuted) void playBark();
+  };
+  document.addEventListener("pointerdown", retryAfterGesture, { once: true });
+  document.addEventListener("keydown", retryAfterGesture, { once: true });
 }
 
-function setUnknown(reason: string): void {
-  cancelPupGreeting();
-  currentVerdict = "unknown";
-  isSniffing = false;
-
-  svg.classList.remove("danger");
-  tail.classList.remove("fast");
-  tail.classList.remove("checking");
-  nose.style.animationPlayState = "paused";
-  body.classList.remove("barking");
-
-  mouth.setAttribute("d", "M 42 50 Q 50 54 58 50");
-  tongue.setAttribute("opacity", "0");
-
-  if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-  msgAppearTimeout = setTimeout(() => {
-    showMsg(`⚠️ Suspicious: ${reason}`, "unknown");
-  }, MSG_APPEAR_DELAY_MS);
+function celebrateSavedNote(): void {
+  void playBark();
+  savedStatus.hidden = false;
+  if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
+  savedStatusTimeout = setTimeout(() => {
+    savedStatus.hidden = true;
+    savedStatusTimeout = null;
+  }, 2400);
 }
 
-// ── Message box ──────────────────────────────────────────────────────────────
-function showMsg(text: string, type: "safe" | "unsafe" | "unknown" | "checking" | "note" | "idle"): void {
-  if (msgTimeout) clearTimeout(msgTimeout);
-  msgBox.textContent = text;
-  msgBox.className = `visible ${type}`;
-  positionMessage();
-
-  msgTimeout = setTimeout(() => {
-    hideMsg();
-  }, MSG_HIDE_DELAY_MS);
+function setNotesStatus(message: string): void {
+  if (!notebookPanel || notebookPanel.hidden) return;
+  notesStatus.textContent = message;
+  notesStatus.hidden = message.length === 0;
 }
-
-function positionMessage(): void {
-  if (!msgBox?.classList.contains("visible")) return;
-
-  const pupRect = svg.getBoundingClientRect();
-  const containerRect = container.getBoundingClientRect();
-  const msgRect = msgBox.getBoundingClientRect();
-  const margin = 8;
-  const gap = 12;
-  const tailSweepClearance = 52;
-  const rightFits = pupRect.right + gap + tailSweepClearance + msgRect.width <= window.innerWidth - margin;
-  const leftFits = pupRect.left - gap - msgRect.width >= margin;
-  const centeredTop = pupRect.top + (pupRect.height - msgRect.height) / 2;
-
-  let x: number;
-  let y: number;
-  if (rightFits) {
-    x = pupRect.right + gap + tailSweepClearance;
-    y = centeredTop;
-  } else if (leftFits) {
-    x = pupRect.left - gap - msgRect.width;
-    y = centeredTop;
-  } else {
-    x = pupRect.left + (pupRect.width - msgRect.width) / 2;
-    const aboveY = pupRect.top - gap - msgRect.height;
-    const belowY = pupRect.bottom + gap;
-    const aboveFits = aboveY >= margin;
-    const belowFits = belowY + msgRect.height <= window.innerHeight - margin;
-
-    if (aboveFits) y = aboveY;
-    else if (belowFits) y = belowY;
-    else {
-      const spaceAbove = pupRect.top - margin;
-      const spaceBelow = window.innerHeight - margin - pupRect.bottom;
-      y = spaceAbove >= spaceBelow ? aboveY : belowY;
-    }
-  }
-
-  const maxX = Math.max(margin, window.innerWidth - margin - msgRect.width);
-  const maxY = Math.max(margin, window.innerHeight - margin - msgRect.height);
-  x = Math.min(maxX, Math.max(margin, x));
-  y = Math.min(maxY, Math.max(margin, y));
-
-  msgBox.style.left = `${x - containerRect.left}px`;
-  msgBox.style.top = `${y - containerRect.top}px`;
-  msgBox.style.right = "auto";
-  msgBox.style.bottom = "auto";
-  msgBox.style.transform = "none";
-}
-
-function hideMsg(): void {
-  if (msgTimeout) clearTimeout(msgTimeout);
-  if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-  if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-  msgBox.className = "";
-}
-
 function positionPopup(popup: HTMLElement, anchor: DOMRect): void {
   const pupRect = container.getBoundingClientRect();
   const popupRect = popup.getBoundingClientRect();
@@ -561,6 +357,10 @@ function positionNotesPopups(): void {
 }
 
 function renderNotes(notes: ResearchNote[]): void {
+  savedNotes = notes;
+  const hasNotes = notes.length > 0;
+  notesSearchInput.hidden = !hasNotes;
+  container.querySelector<HTMLElement>("#sus-pup-notes-search-label")!.hidden = !hasNotes;
   notesContent.replaceChildren();
   if (notes.length === 0) {
     const empty = document.createElement("p");
@@ -570,7 +370,19 @@ function renderNotes(notes: ResearchNote[]): void {
     return;
   }
 
-  for (const note of notes) {
+  const query = notesSearchInput.value.trim().toLocaleLowerCase();
+  const visibleNotes = query
+    ? notes.filter((note) => `${note.text}\n${note.pageTitle}\n${note.url}`.toLocaleLowerCase().includes(query))
+    : notes;
+  if (visibleNotes.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "sus-pup-notes-empty";
+    empty.textContent = "No notes match that search.";
+    notesContent.appendChild(empty);
+    return;
+  }
+
+  for (const note of visibleNotes) {
     const card = document.createElement("article");
     card.className = "sus-pup-note-card";
 
@@ -582,6 +394,22 @@ function renderNotes(notes: ResearchNote[]): void {
     text.textContent = note.text;
     noteHeader.appendChild(text);
 
+    const actions = document.createElement("div");
+    actions.className = "sus-pup-note-actions";
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "sus-pup-note-copy";
+    copyButton.textContent = "Copy";
+    copyButton.title = "Copy this note";
+    copyButton.addEventListener("click", async () => {
+      copyButton.disabled = true;
+      const copied = await copyNoteText(note.text);
+      copyButton.disabled = false;
+      setNotesStatus(copied ? "Copied." : "Couldn't copy that note.");
+    });
+    actions.appendChild(copyButton);
+
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "sus-pup-note-delete";
@@ -591,16 +419,17 @@ function renderNotes(notes: ResearchNote[]): void {
     deleteButton.addEventListener("click", () => {
       deleteButton.disabled = true;
       const request: DeleteNoteMessage = { type: "DELETE_NOTE", noteId: note.id };
-      chrome.runtime.sendMessage(request, (response: NotesResponse | undefined) => {
-        if (chrome.runtime.lastError || !response?.ok) {
+      sendExtensionMessage<NotesResponse>(request, (response, error) => {
+        if (error || !response?.ok) {
           deleteButton.disabled = false;
-          showMsg(response?.error ?? "I couldn't delete that note.", "unknown");
+          setNotesStatus(error ?? response?.error ?? "Couldn't delete that note.");
           return;
         }
         openNotes();
       });
     });
-    noteHeader.appendChild(deleteButton);
+    actions.appendChild(deleteButton);
+    noteHeader.appendChild(actions);
     card.appendChild(noteHeader);
 
     const source = document.createElement("a");
@@ -628,26 +457,50 @@ function renderNotes(notes: ResearchNote[]): void {
   }
 }
 
+async function copyNoteText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Try the user-initiated legacy copy path below when the Clipboard API is unavailable.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  container.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  textarea.remove();
+  return copied;
+}
+
 function openNotes(): void {
   optionsMenu.hidden = true;
   notebookPanel.hidden = false;
+  setNotesStatus("");
   notesContent.textContent = "Loading notes…";
   positionNotesPopups();
   const sequence = ++notesLoadSequence;
   const request: GetNotesMessage = { type: "GET_NOTES" };
-  chrome.runtime.sendMessage(request, (response: NotesResponse | undefined) => {
+  sendExtensionMessage<NotesResponse>(request, (response, error) => {
     if (sequence !== notesLoadSequence || notebookPanel.hidden) return;
-    if (chrome.runtime.lastError || !response?.ok) {
-      notesContent.textContent = response?.error ?? "Could not open your notes.";
+    if (error || !response?.ok) {
+      notesContent.textContent = error ?? response?.error ?? "Could not open your notes.";
       return;
     }
     renderNotes(response.notes ?? []);
     positionNotesPopups();
   });
-}
-
-function showNoteSaved(): void {
-  showMsg("Saved to your notes 🐾", "note");
 }
 
 function initNotesControls(): void {
@@ -656,16 +509,17 @@ function initNotesControls(): void {
     optionsMenu.hidden = !optionsMenu.hidden;
     if (!optionsMenu.hidden) positionNotesPopups();
   });
-  enableResearchButton.addEventListener("click", () => {
+  enableNotesButton.addEventListener("click", () => {
     optionsMenu.hidden = true;
     showConsentPrompt();
   });
   seeNotesButton.addEventListener("click", openNotes);
+  notesSearchInput.addEventListener("input", () => renderNotes(savedNotes));
   linkNotesFileButton.addEventListener("click", () => {
     const request = { type: "OPEN_NOTES_FILE_PAGE" as const };
-    chrome.runtime.sendMessage(request, (response: { ok?: boolean; error?: string } | undefined) => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        showMsg(response?.error ?? "I couldn't open the local text file settings.", "unknown");
+    sendExtensionMessage<{ ok?: boolean; error?: string }>(request, (response, error) => {
+      if (error || !response?.ok) {
+        setNotesStatus(error ?? response?.error ?? "Couldn't open the local text file settings.");
       }
     });
   });
@@ -684,14 +538,13 @@ function initNotesControls(): void {
   chrome.runtime.onMessage.addListener(
     (message: CaptureSelectionMessage, _sender, sendResponse) => {
       if (message.type !== "CAPTURE_SELECTION") return false;
-      if (!hasPageDataConsent) {
-        showConsentPrompt("Enable these features before saving selected text as a note.");
-        sendResponse({ ok: false, error: "Research Helper Pup is waiting for your consent." });
+      if (!hasNoteSavingConsent) {
+        showConsentPrompt();
+        sendResponse({ ok: false, error: "Note saving is waiting for your consent." });
         return false;
       }
       const selectedText = window.getSelection()?.toString().trim() ?? "";
       if (!selectedText) {
-        showMsg("Select webpage text, then press Ctrl+Shift+Y.", "unknown");
         sendResponse({ ok: false });
         return false;
       }
@@ -704,13 +557,13 @@ function initNotesControls(): void {
         createdAt: Date.now(),
       };
       const request: StoreNoteMessage = { type: "STORE_NOTE", note };
-      chrome.runtime.sendMessage(request, (response: NotesResponse | undefined) => {
-        if (chrome.runtime.lastError || !response?.ok) {
-          showMsg(response?.error ?? "I couldn't save that note.", "unknown");
+      sendExtensionMessage<NotesResponse>(request, (response, error) => {
+        if (error || !response?.ok) {
+          setNotesStatus(error ?? response?.error ?? "Couldn't save that note.");
           sendResponse({ ok: false });
           return;
         }
-        showNoteSaved();
+        celebrateSavedNote();
         sendResponse({ ok: true });
       });
       return true;
@@ -720,8 +573,9 @@ function initNotesControls(): void {
 
 function renderSoundToggle(): void {
   soundToggleButton.setAttribute("aria-checked", String(pupSoundsMuted));
-  soundToggleButton.setAttribute("aria-label", pupSoundsMuted ? "Unmute pup sounds" : "Mute pup sounds");
-  soundToggleLabel.textContent = pupSoundsMuted ? "Unmute pup sounds" : "Mute pup sounds";
+  soundToggleButton.setAttribute("aria-label", pupSoundsMuted ? "Unmute pup" : "Mute pup");
+  soundToggleLabel.textContent = pupSoundsMuted ? "Unmute pup" : "Mute pup";
+  container.classList.toggle("is-muted", pupSoundsMuted);
 }
 
 function initSoundControls(): void {
@@ -729,21 +583,24 @@ function initSoundControls(): void {
     const previousValue = pupSoundsMuted;
     pupSoundsMuted = !pupSoundsMuted;
     renderSoundToggle();
-    chrome.storage.local.set({ [SOUND_MUTED_STORAGE_KEY]: pupSoundsMuted }, () => {
-      if (!chrome.runtime.lastError) return;
+    setLocalSettings({ [SOUND_MUTED_STORAGE_KEY]: pupSoundsMuted }, (error) => {
+      if (!error) return;
       pupSoundsMuted = previousValue;
       renderSoundToggle();
-      showMsg("I couldn't save the sound setting. Please try again.", "unknown");
+      setNotesStatus(error);
     });
   });
 
   soundToggleButton.disabled = true;
-  chrome.storage.local.get(SOUND_MUTED_STORAGE_KEY, (items) => {
+  getLocalSettings(SOUND_MUTED_STORAGE_KEY, (items, error) => {
     soundToggleButton.disabled = false;
     soundPreferenceLoaded = true;
-    if (chrome.runtime.lastError) return;
-    pupSoundsMuted = items[SOUND_MUTED_STORAGE_KEY] === true;
+    if (!error) pupSoundsMuted = items[SOUND_MUTED_STORAGE_KEY] === true;
     renderSoundToggle();
+    if (welcomeSoundPending) {
+      welcomeSoundPending = false;
+      if (!pupSoundsMuted) playWelcomeBark();
+    }
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -753,156 +610,6 @@ function initSoundControls(): void {
     pupSoundsMuted = change.newValue === true;
     renderSoundToggle();
   });
-}
-
-// Show a playful check-in after the visible page has had no user activity.
-function scheduleIdleMessage(): void {
-  if (idleMessageTimeout) clearTimeout(idleMessageTimeout);
-  idleMessageTimeout = null;
-  if (document.visibilityState !== "visible" || !container?.isConnected) return;
-
-  idleMessageTimeout = setTimeout(() => {
-    idleMessageTimeout = null;
-    showMsg(IDLE_MESSAGES[idleMessageIndex], "idle");
-    idleMessageIndex = (idleMessageIndex + 1) % IDLE_MESSAGES.length;
-    scheduleIdleMessage();
-  }, IDLE_MESSAGE_DELAY_MS);
-}
-
-function initIdleMessages(): void {
-  const activityEvents = ["pointermove", "pointerdown", "keydown", "input", "wheel", "touchstart", "click"];
-  for (const eventName of activityEvents) {
-    document.addEventListener(eventName, scheduleIdleMessage, { passive: true });
-  }
-  document.addEventListener("scroll", scheduleIdleMessage, { capture: true, passive: true });
-  document.addEventListener("visibilitychange", scheduleIdleMessage);
-  window.addEventListener("pageshow", scheduleIdleMessage);
-  scheduleIdleMessage();
-}
-
-// ── Safety check ─────────────────────────────────────────────────────────────
-function checkUrl(url: string, startedAt: number, sequence: number): void {
-  setSniff();
-  const msg: CheckRequest = { type: "CHECK_URL", url };
-  chrome.runtime.sendMessage(msg, (response: CheckResponse) => {
-    if (sequence !== hoverSequence) return;
-    if (chrome.runtime.lastError) {
-      setIdle();
-      return;
-    }
-    if (response.verdict === "safe") setSafe(startedAt, sequence);
-    else if (response.verdict === "unsafe") setUnsafe(response.reason);
-    else setUnknown(response.reason);
-  });
-}
-
-function isSearchResultsLocation(): boolean {
-  try {
-    const url = new URL(location.href);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    const supportedHost = host === "google.com" || /^google\.[a-z]{2,3}(?:\.[a-z]{2})?$/.test(host) ||
-      host === "bing.com" || host === "duckduckgo.com";
-    return supportedHost && url.searchParams.has("q") &&
-      ((host === "google.com" || host.startsWith("google.")) ? url.pathname === "/search" :
-        host === "bing.com" ? url.pathname === "/search" : true);
-  } catch {
-    return false;
-  }
-}
-
-function reviewUrl(url: string): Promise<CheckResponse> {
-  return new Promise((resolve) => {
-    const request: CheckRequest = { type: "CHECK_URL", url };
-    chrome.runtime.sendMessage(request, (response: CheckResponse | undefined) => {
-      if (chrome.runtime.lastError || !response) {
-        resolve({ verdict: "unknown", reason: "Could not check this site's safety" });
-      } else {
-        resolve(response);
-      }
-    });
-  });
-}
-
-async function reviewSearchResults(): Promise<void> {
-  if (!isSearchResultsLocation()) return;
-  const page = readResearchPage();
-  if (!page) return;
-  const results = page.results.slice(0, RESEARCH_RESULT_LIMIT);
-  const signature = results.map((result) => result.url).join("|");
-  if (signature === lastResearchSignature) return;
-  lastResearchSignature = signature;
-  const sequence = ++researchSequence;
-
-  setSniff();
-  const checked = await Promise.all(results.map(async (result) => ({
-    result,
-    safety: await reviewUrl(result.url),
-  })));
-  if (sequence !== researchSequence || !container.isConnected) return;
-
-  const unsafe = checked.find(({ safety }) => safety.verdict === "unsafe");
-  if (unsafe) {
-    setUnsafe(unsafe.safety.reason);
-    return;
-  }
-
-  const suspicious = checked.find(({ safety }) => safety.verdict === "unknown");
-  if (suspicious) {
-    setResearchWarning(`I found a possible safety concern: ${suspicious.safety.reason}`);
-    return;
-  }
-
-  setResearchGood();
-}
-
-function setResearchGood(): void {
-  cancelPupGreeting();
-  currentVerdict = "safe";
-  isSniffing = false;
-  svg.classList.remove("danger");
-  tail.classList.remove("checking");
-  tail.classList.add("fast");
-  nose.style.animationPlayState = "paused";
-  body.classList.remove("barking");
-  mouth.setAttribute("d", "M 40 50 Q 50 62 60 50");
-  tongue.setAttribute("opacity", "1");
-  blushL.setAttribute("opacity", "0.5");
-  blushR.setAttribute("opacity", "0.5");
-  showMsg("I checked the search links. No red flags so far! 🐾", "safe");
-}
-
-function setResearchWarning(message: string): void {
-  cancelPupGreeting();
-  currentVerdict = "unknown";
-  isSniffing = false;
-  svg.classList.remove("danger");
-  tail.classList.remove("checking", "fast");
-  nose.style.animationPlayState = "paused";
-  body.classList.remove("barking");
-  mouth.setAttribute("d", "M 42 50 Q 50 54 58 50");
-  tongue.setAttribute("opacity", "0");
-  blushL.setAttribute("opacity", "0");
-  blushR.setAttribute("opacity", "0");
-  showMsg(message, "unknown");
-}
-
-function initResearchReview(): void {
-  if (!isSearchResultsLocation()) return;
-  const schedule = () => {
-    if (researchTimer) clearTimeout(researchTimer);
-    researchTimer = setTimeout(() => void reviewSearchResults(), 900);
-  };
-  schedule();
-
-  const observer = new MutationObserver((mutations) => {
-    const pageChanged = mutations.some((mutation) => {
-      const target = mutation.target;
-      return !container.contains(target);
-    });
-    if (pageChanged) schedule();
-  });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.addEventListener("popstate", schedule);
 }
 
 // ── Drag ──────────────────────────────────────────────────────────────────────
@@ -935,7 +642,6 @@ function initDrag(): void {
     const dy = e.clientY - startY;
     container.style.left = `${origLeft + dx}px`;
     container.style.top = `${origTop + dy}px`;
-    positionMessage();
     positionNotesPopups();
   });
 
@@ -947,92 +653,36 @@ function initDrag(): void {
 
 // ── Pup greeting ──────────────────────────────────────────────────────────────
 function initPupGreeting(): void {
-  svg.addEventListener("pointerenter", startPupGreeting, { passive: true });
-}
-
-// ── Hover detection ───────────────────────────────────────────────────────────
-function initHover(): void {
-  window.addEventListener("resize", positionMessage);
-
-  document.addEventListener("mouseover", (e: MouseEvent) => {
-    if (isSearchResultsLocation()) return;
-    if (e.target instanceof Node && container.contains(e.target)) return;
-    const target = e.target as HTMLElement;
-    const link = target.closest("a") as HTMLAnchorElement | null;
-
-    if (!link || !link.href || !isSafeToCheck(link.href)) return;
-    if (e.relatedTarget instanceof Node && link.contains(e.relatedTarget)) return;
-    if (link === hoveredLink) return;
-
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-    if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-    hideMsg();
-
-    hoveredLink = link;
-    hoverStartedAt = Date.now();
-    isLinkHoverActive = true;
-    const sequence = ++hoverSequence;
-    const startedAt = hoverStartedAt;
-
-    hoverTimeout = setTimeout(() => {
-      const now = Date.now();
-      if (now - lastCheckTime < CHECK_RATE_LIMIT_MS) return;
-      lastCheckTime = now;
-      checkUrl(link.href, startedAt, sequence);
-    }, HOVER_DELAY_MS);
-  });
-
-  document.addEventListener("mouseout", (e: MouseEvent) => {
-    if (isSearchResultsLocation()) return;
-    if (e.target instanceof Node && container.contains(e.target)) return;
-    const target = e.target as HTMLElement;
-    const link = target.closest("a") as HTMLAnchorElement | null;
-    if (!link) return;
-    if (e.relatedTarget instanceof Node && link.contains(e.relatedTarget)) return;
-    if (link !== hoveredLink) return;
-
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-    if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-    hoveredLink = null;
-    hoverStartedAt = 0;
-    isLinkHoverActive = false;
-
-    if (!isSniffing) {
-      setIdle(true);
-    }
-  });
+  svg.addEventListener("pointerenter", () => svg.classList.add("petting"), { passive: true });
+  svg.addEventListener("pointerleave", () => svg.classList.remove("petting"), { passive: true });
 }
 
 // ── Mount ─────────────────────────────────────────────────────────────────────
 function showConsentPrompt(message = ""): void {
   consentStatus.textContent = message;
   consentOverlay.hidden = false;
-  enableResearchButton.hidden = true;
+  enableNotesButton.hidden = true;
+  welcomePup();
   consentEnableButton.focus();
 }
 
 function dismissConsentPrompt(): void {
   consentOverlay.hidden = true;
-  enableResearchButton.hidden = false;
+  enableNotesButton.hidden = false;
   optionsButton.focus();
-  showMsg("No problem. Research features are off. Open ⋯ and choose Enable research features when you are ready.", "idle");
-  chrome.storage.local.set({ [CONSENT_STORAGE_KEY]: CONSENT_DECLINED }, () => {
-    if (chrome.runtime.lastError) {
-      showMsg("Your choice applies on this page; I may ask again after a reload.", "idle");
+  setLocalSettings({ [CONSENT_STORAGE_KEY]: CONSENT_DECLINED }, (error) => {
+    if (error) {
+      enableNotesButton.title = error;
     }
   });
 }
 
-function enablePageDataFeatures(): void {
-  if (dataFeaturesInitialized) return;
-  dataFeaturesInitialized = true;
-  hasPageDataConsent = true;
-  enableResearchButton.hidden = true;
+function enableNoteSaving(): void {
+  if (noteSavingInitialized) return;
+  noteSavingInitialized = true;
+  hasNoteSavingConsent = true;
+  enableNotesButton.hidden = true;
   consentOverlay.hidden = true;
-  initHover();
-  initResearchReview();
 }
 
 function initConsentGate(): void {
@@ -1061,30 +711,35 @@ function initConsentGate(): void {
   consentEnableButton.addEventListener("click", () => {
     consentEnableButton.disabled = true;
     consentStatus.textContent = "Saving your choice…";
-    chrome.storage.local.set({ [CONSENT_STORAGE_KEY]: CONSENT_VERSION }, () => {
+    setLocalSettings({ [CONSENT_STORAGE_KEY]: CONSENT_VERSION }, (error) => {
       consentEnableButton.disabled = false;
-      if (chrome.runtime.lastError) {
-        consentStatus.textContent = "I could not save your choice. Please try again; research features remain off until it is saved.";
+      if (error) {
+        consentStatus.textContent = `${error} Note saving remains off until your choice is saved.`;
         return;
       }
-      enablePageDataFeatures();
+      enableNoteSaving();
     });
   });
 
-  chrome.storage.local.get(CONSENT_STORAGE_KEY, (items) => {
-    if (chrome.runtime.lastError) {
-      showConsentPrompt("I could not verify a saved choice. Please choose whether to enable these features.");
+  getLocalSettings(CONSENT_STORAGE_KEY, (items, error) => {
+    if (error) {
+      showConsentPrompt("I couldn't read your saved choice. Please choose whether to enable note saving.");
       return;
     }
     if (items[CONSENT_STORAGE_KEY] === CONSENT_VERSION) {
-      enablePageDataFeatures();
+      enableNoteSaving();
       return;
     }
     if (items[CONSENT_STORAGE_KEY] === CONSENT_DECLINED) {
-      enableResearchButton.hidden = false;
+      enableNotesButton.hidden = false;
       return;
     }
     showConsentPrompt();
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    const change = changes[CONSENT_STORAGE_KEY];
+    if (areaName === "local" && change?.newValue === CONSENT_VERSION) enableNoteSaving();
   });
 }
 
@@ -1093,17 +748,9 @@ function mount(): void {
   document.body.appendChild(container);
 
   svg    = container.querySelector("#sus-pup-svg") as SVGElement;
-  tail   = container.querySelector(".pup-tail")    as SVGElement;
-  nose   = container.querySelector(".pup-nose")    as SVGElement;
-  body   = container.querySelector(".pup-body")    as SVGElement;
-  mouth  = container.querySelector("#pup-mouth")   as SVGElement;
-  tongue = container.querySelector("#pup-tongue")  as SVGElement;
-  blushL = container.querySelector("#pup-blush-l") as SVGElement;
-  blushR = container.querySelector("#pup-blush-r") as SVGElement;
-  msgBox = container.querySelector("#sus-pup-msg") as HTMLElement;
   optionsButton = container.querySelector("#sus-pup-options-button") as HTMLButtonElement;
   optionsMenu = container.querySelector("#sus-pup-options-menu") as HTMLDivElement;
-  enableResearchButton = container.querySelector("#sus-pup-enable-research") as HTMLButtonElement;
+  enableNotesButton = container.querySelector("#sus-pup-enable-notes") as HTMLButtonElement;
   consentOverlay = container.querySelector("#sus-pup-consent-overlay") as HTMLDivElement;
   consentStatus = container.querySelector("#sus-pup-consent-status") as HTMLElement;
   consentEnableButton = container.querySelector("#sus-pup-consent-enable") as HTMLButtonElement;
@@ -1111,30 +758,20 @@ function mount(): void {
   seeNotesButton = container.querySelector("#sus-pup-see-notes") as HTMLButtonElement;
   soundToggleButton = container.querySelector("#sus-pup-toggle-sound") as HTMLButtonElement;
   soundToggleLabel = container.querySelector("#sus-pup-sound-label") as HTMLSpanElement;
+  savedStatus = container.querySelector("#sus-pup-save-status") as HTMLElement;
   linkNotesFileButton = container.querySelector("#sus-pup-link-notes-file") as HTMLButtonElement;
   notebookPanel = container.querySelector("#sus-pup-notebook") as HTMLElement;
   closeNotesButton = container.querySelector("#sus-pup-close-notes") as HTMLButtonElement;
   notesContent = container.querySelector("#sus-pup-notes-content") as HTMLElement;
-
-  nose.style.animationPlayState = "paused";
+  notesStatus = container.querySelector("#sus-pup-notes-status") as HTMLElement;
+  notesSearchInput = container.querySelector("#sus-pup-notes-search") as HTMLInputElement;
 
   initPupGreeting();
   initDrag();
   initNotesControls();
   initSoundControls();
   initConsentGate();
-  initIdleMessages();
 
-  // Clean up timers on page unload
-  window.addEventListener("pagehide", () => {
-    cancelPupGreeting();
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    if (safeLingerTimeout) clearTimeout(safeLingerTimeout);
-    if (idleMessageTimeout) clearTimeout(idleMessageTimeout);
-    if (msgTimeout) clearTimeout(msgTimeout);
-    if (msgAppearTimeout) clearTimeout(msgAppearTimeout);
-    if (researchTimer) clearTimeout(researchTimer);
-  });
 }
 
 // Wait for body

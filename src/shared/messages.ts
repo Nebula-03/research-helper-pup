@@ -1,15 +1,3 @@
-export type Verdict = "safe" | "unsafe" | "unknown";
-
-export interface CheckRequest {
-  type: "CHECK_URL";
-  url: string;
-}
-
-export interface CheckResponse {
-  verdict: Verdict;
-  reason: string;
-}
-
 export interface ResearchNote {
   id: string;
   text: string;

@@ -1,10 +1,5 @@
-import { loadBlocklist, isBlocked } from "./lib/blocklist";
-import { runHeuristics } from "./lib/checker";
-import { getCached, setCached } from "./lib/cache";
 import { getNotesFileHandle, removeNotesFileHandle, writeNotesToFile } from "./shared/notes-file";
 import type {
-  CheckRequest,
-  CheckResponse,
   DeleteNoteMessage,
   GetNotesFileStatusMessage,
   GetNotesMessage,
@@ -19,11 +14,9 @@ import type {
 
 const NOTES_STORAGE_KEY = "researchHelperNotes";
 
-const blocklistReady = loadBlocklist();
-
 chrome.runtime.onMessage.addListener(
   (
-    message: CheckRequest | StoreNoteMessage | GetNotesMessage | DeleteNoteMessage |
+    message: StoreNoteMessage | GetNotesMessage | DeleteNoteMessage |
       OpenNotesFilePageMessage | GetNotesFileStatusMessage | SyncNotesFileMessage | UnlinkNotesFileMessage,
     sender,
     sendResponse,
@@ -143,36 +136,7 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
-    if (message.type !== "CHECK_URL") return false;
-
-    // Basic type guard — make sure url is a non-empty string
-    if (typeof message.url !== "string" || message.url.trim() === "") {
-      sendResponse({ verdict: "unknown", reason: "Invalid URL received" });
-      return false;
-    }
-
-    // Wait for the bundled list before caching the first URL verdict.
-    void blocklistReady.then(() => {
-      const cached = getCached(message.url);
-      if (cached) {
-        sendResponse(cached);
-        return;
-      }
-
-      let result: CheckResponse;
-
-      if (isBlocked(message.url)) {
-        result = { verdict: "unsafe", reason: "Known phishing or malware domain" };
-      } else {
-        result = runHeuristics(message.url);
-      }
-
-      setCached(message.url, result);
-      sendResponse(result);
-    }).catch(() => {
-      sendResponse({ verdict: "unknown", reason: "Could not check this link" });
-    });
-    return true;
+    return false;
   }
 );
 

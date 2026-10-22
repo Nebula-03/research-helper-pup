@@ -50,6 +50,28 @@
   outline-offset: 2px;
 }
 
+#sus-pup-save-status {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  padding: 7px 11px;
+  border: 2px solid #4b9b5d;
+  border-radius: 12px;
+  color: #286b3a;
+  background: #f3fff4;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 22%);
+  font: 600 13px/1.3 "Segoe UI", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#sus-pup-save-status[hidden] {
+  display: none !important;
+}
+
 .sus-pup-popup {
   position: absolute;
   z-index: 3;
@@ -68,12 +90,12 @@
 }
 
 #sus-pup-options-menu {
-  width: 190px;
+  width: 220px;
   padding: 5px;
 }
 
 #sus-pup-see-notes,
-#sus-pup-enable-research,
+#sus-pup-enable-notes,
 #sus-pup-toggle-sound,
 #sus-pup-close-notes {
   all: unset;
@@ -83,7 +105,7 @@
 }
 
 #sus-pup-see-notes,
-#sus-pup-enable-research,
+#sus-pup-enable-notes,
 #sus-pup-toggle-sound {
   display: block;
   width: 100%;
@@ -124,14 +146,14 @@
   opacity: 0.65;
 }
 
-#sus-pup-enable-research[hidden] {
+#sus-pup-enable-notes[hidden] {
   display: none !important;
 }
 
 #sus-pup-see-notes:hover,
 #sus-pup-see-notes:focus-visible,
-#sus-pup-enable-research:hover,
-#sus-pup-enable-research:focus-visible,
+#sus-pup-enable-notes:hover,
+#sus-pup-enable-notes:focus-visible,
 #sus-pup-toggle-sound:hover,
 #sus-pup-toggle-sound:focus-visible {
   background: #f7e8c9;
@@ -179,13 +201,21 @@
   margin: 10px 0;
 }
 
-#sus-pup-consent-card ul {
+.sus-pup-welcome-steps {
   margin: 12px 0;
-  padding-left: 22px;
+  padding-left: 24px;
 }
 
-#sus-pup-consent-card li {
-  margin: 8px 0;
+.sus-pup-welcome-steps li {
+  margin: 10px 0;
+}
+
+.sus-pup-welcome-steps kbd {
+  padding: 2px 5px;
+  border: 1px solid #cbb080;
+  border-radius: 5px;
+  background: #fff7e6;
+  font: 600 12px/1.4 "Segoe UI", sans-serif;
 }
 
 #sus-pup-privacy-link {
@@ -276,8 +306,47 @@
   padding: 9px;
 }
 
+#sus-pup-notes-status {
+  margin: 8px 10px 0;
+  color: #655b4d;
+  font: 12px/1.4 "Segoe UI", sans-serif;
+}
+
+#sus-pup-notes-status[hidden] {
+  display: none !important;
+}
+
 .sus-pup-notes-file-tools {
   padding: 8px 10px 0;
+}
+
+.sus-pup-notes-search-label {
+  display: block;
+  padding: 8px 10px 3px;
+  color: #655b4d;
+  font: 600 11px/1.3 "Segoe UI", sans-serif;
+}
+
+#sus-pup-notes-search {
+  box-sizing: border-box;
+  width: calc(100% - 20px);
+  margin: 0 10px 2px;
+  padding: 7px 9px;
+  border: 1px solid #cbb080;
+  border-radius: 7px;
+  color: #342719;
+  background: #fff;
+  font: 13px/1.35 "Segoe UI", sans-serif;
+}
+
+#sus-pup-notes-search:focus-visible {
+  outline: 2px solid #704c22;
+  outline-offset: 1px;
+}
+
+#sus-pup-notes-search[hidden],
+.sus-pup-notes-search-label[hidden] {
+  display: none !important;
 }
 
 #sus-pup-link-notes-file {
@@ -319,6 +388,36 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+.sus-pup-note-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sus-pup-note-copy {
+  all: unset;
+  box-sizing: border-box;
+  min-height: 26px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  color: #245c91;
+  font: 600 11px/1.4 "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.sus-pup-note-copy:hover,
+.sus-pup-note-copy:focus-visible {
+  background: #e7f0fa;
+  outline: 2px solid #245c91;
+  outline-offset: 1px;
+}
+
+.sus-pup-note-copy:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 .sus-pup-note-text {
@@ -372,241 +471,63 @@
   font-size: 11px;
 }
 
-/* Message bubble — JavaScript places it on the side with room */
-#sus-pup-msg {
-  position: absolute;
-  left: 112px;
-  top: 50%;
-  transform: translateY(-50%);
-  box-sizing: border-box;
-  font-family: "Segoe UI", sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 12px;
-  border-radius: 10px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  max-width: min(200px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
-  overflow: auto;
-  white-space: normal;
-  text-align: center;
-  line-height: 1.5;
-  min-width: min(120px, calc(100vw - 16px));
-}
-
-#sus-pup-msg.visible {
-  opacity: 1;
-}
-
-/* Safe — green text, white bg, yellow 3px border */
-#sus-pup-msg.safe {
-  color: #1a6e2e;
-  background: #ffffff;
-  border: 3px solid #f5c400;
-}
-
-/* Unsafe — red text, dark bg, red border */
-#sus-pup-msg.unsafe {
-  color: #ff4444;
-  background: #1a0000;
-  border: 3px solid #ff4444;
-}
-
-/* Suspicious result — orange text, dark bg */
-#sus-pup-msg.unknown {
-  color: #ff9900;
-  background: #1a1200;
-  border: 3px solid #ff9900;
-}
-
-/* Research check in progress */
-#sus-pup-msg.checking {
-  color: #e9f3ff;
-  background: #122033;
-  border: 3px solid #78b8f4;
-}
-
-#sus-pup-msg.note {
-  color: #155e50;
-  background: #effff8;
-  border: 3px solid #6cc9a7;
-}
-
-#sus-pup-msg.idle {
-  color: #49351f;
-  background: #fff7e6;
-  border: 3px solid #d5b36e;
-}
-
 /* ── Animations ── */
 
-@keyframes wag {
-  0%   { transform: rotate(0deg);   }
-  25%  { transform: rotate(30deg);  }
-  75%  { transform: rotate(-30deg); }
-  100% { transform: rotate(0deg);   }
+@keyframes wag-slow {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(20deg); }
+  75% { transform: rotate(-20deg); }
 }
 
 @keyframes wag-fast {
-  0%   { transform: rotate(0deg);   }
-  25%  { transform: rotate(50deg);  }
-  75%  { transform: rotate(-50deg); }
-  100% { transform: rotate(0deg);   }
-}
-@keyframes wag-pet {
-  0%   { transform: rotate(0deg);   }
-  25%  { transform: rotate(34deg);  }
-  75%  { transform: rotate(-34deg); }
-  100% { transform: rotate(0deg);   }
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(34deg); }
+  75% { transform: rotate(-34deg); }
 }
 
-
-@keyframes sniff {
-  0%   { transform: translateY(0px); }
-  50%  { transform: translateY(5px); }
-  100% { transform: translateY(0px); }
-}
-
-@keyframes bark-shake {
-  0%   { transform: translateX(0px);  }
-  15%  { transform: translateX(-6px); }
-  30%  { transform: translateX(6px);  }
-  45%  { transform: translateX(-6px); }
-  60%  { transform: translateX(6px);  }
-  75%  { transform: translateX(-6px); }
-  100% { transform: translateX(0px);  }
-}
-
-@keyframes idle-bounce {
-  0%   { transform: translateY(0px); }
-  50%  { transform: translateY(-3px);}
-  100% { transform: translateY(0px); }
-}
-
-@keyframes greeting-body {
-  0%, 12%, 100% { transform: translateY(0) scale(1); }
-  24% { transform: translateY(3px) scale(1.03, 0.9); }
-  38%, 68% { transform: translateY(6px) scale(1.06, 0.78); }
-  84% { transform: translateY(2px) scale(1.02, 0.94); }
-}
-
-@keyframes greeting-head {
-  0%, 12%, 100% { transform: translateY(0) rotate(0); }
-  24% { transform: translateY(2px) rotate(-1deg); }
-  38%, 68% { transform: translateY(8px) rotate(-3deg); }
-  84% { transform: translateY(2px) rotate(0); }
-}
-
-@keyframes greeting-blink {
-  0%, 10%, 18%, 100% { transform: scaleY(1); }
-  12%, 15% { transform: scaleY(0.08); }
-}
-
-@keyframes greeting-paw-left {
-  0%, 12%, 100% { transform: translateY(0) scaleY(1); }
-  38%, 68% { transform: translate(-6px, 10px) scaleY(1.12); }
-  84% { transform: translate(-3px, 5px) scaleY(1.06); }
-}
-
-@keyframes greeting-paw-right {
-  0%, 12%, 100% { transform: translateY(0) scaleY(1); }
-  38%, 68% { transform: translate(6px, 10px) scaleY(1.12); }
-  84% { transform: translate(3px, 5px) scaleY(1.06); }
-}
-
-@keyframes greeting-mouth {
-  0%, 22%, 82%, 100% { opacity: 0; }
-  30%, 70% { opacity: 1; }
-}
-
-@keyframes greeting-tongue {
-  0%, 28%, 82%, 100% { opacity: 0; transform: scaleY(0.75); }
-  36%, 70% { opacity: 1; transform: scaleY(1); }
-}
-
-#sus-pup-svg.greeting .pup-tail {
-  animation: wag-pet 0.42s ease-in-out infinite;
-}
-
-#sus-pup-svg.greeting .pup-body {
-  transform-box: view-box;
-  transform-origin: 50px 70px;
-  animation: greeting-body 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting .pup-idle {
-  transform-box: view-box;
-  transform-origin: 50px 50px;
-  animation: greeting-head 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting .pup-eyes {
-  transform-box: view-box;
-  transform-origin: 50px 34px;
-  animation: greeting-blink 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting .pup-stretch-paw-left {
-  transform-box: view-box;
-  transform-origin: 44px 64px;
-  animation: greeting-paw-left 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting .pup-stretch-paw-right {
-  transform-box: view-box;
-  transform-origin: 56px 64px;
-  animation: greeting-paw-right 3s ease-in-out both;
-}
-
-#sus-pup-svg .pup-greeting-mouth {
-  opacity: 0;
-}
-
-#sus-pup-svg.greeting #pup-mouth {
-  opacity: 0;
-}
-
-#sus-pup-svg.greeting .pup-greeting-mouth {
-  animation: greeting-mouth 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting #pup-tongue {
-  transform-box: fill-box;
-  transform-origin: center top;
-  animation: greeting-tongue 3s ease-in-out both;
-}
-
-#sus-pup-svg.greeting #pup-blush-l,
-#sus-pup-svg.greeting #pup-blush-r {
-  opacity: 0.55;
+@keyframes blink-twice {
+  0%, 5%, 17%, 42%, 54%, 100% { transform: scaleY(1); }
+  8%, 12%, 45%, 49% { transform: scaleY(0.08); }
 }
 
 .pup-tail {
-  animation: wag 1.2s ease-in-out infinite;
-  transition: transform 0.2s ease;
+  animation: wag-slow 1.6s ease-in-out infinite;
 }
 
-.pup-tail.fast {
-  animation: wag-fast 0.3s ease-in-out infinite;
+.pup-greeting-mouth {
+  display: none;
 }
 
-.pup-tail.checking {
-  animation: wag 2.4s ease-in-out infinite;
+#sus-pup-svg.petting .pup-tail {
+  animation: wag-fast 0.8s ease-in-out infinite;
 }
 
-.pup-nose {
-  animation: sniff 0.4s ease-in-out infinite;
-  animation-play-state: paused;
+#sus-pup-svg.petting .pup-eyes {
+  transform-box: view-box;
+  transform-origin: 50px 34px;
+  animation: blink-twice 0.55s ease-in-out 1 both;
 }
 
-.pup-body.barking {
-  animation: bark-shake 0.2s ease-in-out 5;
+#sus-pup-svg #pup-blush-l,
+#sus-pup-svg #pup-blush-r {
+  transition: opacity 0.12s ease-in-out;
 }
 
-.pup-idle {
-  animation: idle-bounce 2s ease-in-out infinite;
+#sus-pup-svg.petting #pup-blush-l,
+#sus-pup-svg.petting #pup-blush-r {
+  opacity: 0.55;
+}
+
+#sus-pup-svg.petting #pup-tongue {
+  opacity: 1;
+}
+
+#sus-pup-svg.petting #pup-mouth {
+  opacity: 0;
+}
+
+#sus-pup-svg.petting .pup-greeting-mouth {
+  display: block;
 }
 
 .pup-leg-fill {
@@ -632,45 +553,8 @@
   stroke-width: 1.2;
 }
 
-/* Red tint when unsafe */
-#sus-pup-svg.danger .pup-body-fill {
-  fill: #d9a09a;
-  transition: fill 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-leg-fill {
-  fill: #cf9187;
-  stroke: #c9827b;
-  transition: fill 0.4s ease, stroke 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-paw-fill {
-  fill: #d9a09a;
-  stroke: #c9827b;
-  transition: fill 0.4s ease, stroke 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-paw-detail {
-  stroke: #b96e68;
-}
-
-#sus-pup-svg.danger .pup-ear-fill {
-  fill: #c9827b;
-  transition: fill 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-tail-fill {
-  fill: #c9827b;
-  stroke: #c9827b;
-  transition: fill 0.4s ease, stroke 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-tail-detail {
-  stroke: #b96e68;
-  transition: stroke 0.4s ease;
-}
-
-#sus-pup-svg.danger .pup-tail {
-  animation: none;
-  transform: rotate(-14deg);
+/* Muting the pup silences it and pauses the tail wag. */
+#sus-pup-container.is-muted .pup-tail {
+  animation: none !important;
+  transform: none !important;
 }

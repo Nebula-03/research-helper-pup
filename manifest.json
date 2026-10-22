@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Research Helper Pup",
-  "version": "0.1.0",
-  "description": "A draggable research companion that checks search-result links and saves selected passages to a local notebook.",
+  "version": "0.2.0",
+  "description": "A friendly pup for saving selected text and research notes on your device.",
   "permissions": [
     "storage"
   ],
@@ -33,6 +33,16 @@
         "content/puppy.css"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/pup-bark.ogg"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "icons": {
